@@ -1,8 +1,13 @@
-function [X, P] = UKF_newLM(X_expect,X,P,V,L_obsv,states_obsved,L_index,sigma_param)
+function [X, P] = UKF_newLM(robot_pose,testing,observation,L_obsv,sigma_param)
+X = testing.states;
+P = testing.P;
+V = observation.V;
+L_index = observation.L_index;
+states_obsved = observation.states_obsved;
 
 %convert measurement to states
 [measure_sigma,W_c,W_m] = compute_sigma_points(L_obsv,V,sigma_param);
-l_sigma = inverse_landmark_obsv(X_expect, measure_sigma);
+l_sigma = inverse_landmark_obsv(robot_pose, measure_sigma);
 X(L_index) = sigma_mean_cal(l_sigma,W_m);
 %increase size of error covariance matrix
 %new landmark auto covariance

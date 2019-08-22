@@ -7,22 +7,24 @@ loop = 1;
 dt = 0.1;
 
 %%%ROBOT STATES
-states_ekf = zeros(iteration,3);
-states_ukf = zeros(iteration,3);
-states_expect = zeros(iteration,3);
+robot_full_states = struct;
+robot_full_states.states_testing1 = zeros(iteration,3);
+robot_full_states.states_testing2 = zeros(iteration,3);
+robot_full_states.states_true_pose = zeros(iteration,3);
 %%%LANDMARKS INIT
-landmark_number = 20; %number of landmarks
-map_length = 10; %map size
+map = struct;
+map.landmark_number = 20;  %number of landmarks
+map.map_length = 10; %map size
+map.random_landmark = true;
 figure(1); % create figure
 cla % clear axes
-axis([-map_length map_length -map_length map_length]) % set axes limits
+axis([-map.map_length map.map_length -map.map_length map.map_length]) % set axes limits
 axis square
 %%%LANDMARKS GENERATION
-random_landmark = true;%true; %true for random_landmark, false for fixed landmark
-L = landmarks_generate(map_length,landmark_number,random_landmark); %landmark location are generated,size of(2,landmark_number)
-% L_estimate_use_CI_sigma = zeros(2,landmark_number);
+map.Landmark_location = landmarks_generate(map); %landmark location are generated,size of(2,map.landmark_number)
+% L_estimate_use_CI_sigma = zeros(2,map.landmark_number);
 % L_estimate = L_estimate_use_CI_sigma;
-L_filter_free = zeros(2,landmark_number);
+L_filter_free = zeros(2,map.landmark_number);
 
 %%%Constraints init
 constraints = struct;
@@ -31,84 +33,98 @@ constraints.z = zeros(iteration,1);
 
 %%%ODOMETRY approx
 odometry = struct;
-odometry.odom = zeros(iteration,3);
-odometry.unfiltered_pose = zeros(iteration,3);
+odometry.odom = zeros(3,iteration);
+odometry.true_pose = zeros(3,iteration);
 
 %%%NOISE COV
-q = 3*[.01;pi/500]; % control noise
-Q = diag(q.^2);
+q = 1*[.01;pi/1000]; % control noise
 
-v = 2*[.2;1*pi/180];% measurement noise
-V = diag(v.^2);
+v = 1*[.2;1*pi/180];% measurement noise
+
+%%%OBSERVATION
+observations = struct;
+observations.newlandmarks = struct;
+observations.V = diag(v.^2); %measurement noise
 %%%ROBOT INTPUT
+control_input = struct;
 u_v = 1; %line speed
 u_w = pi/10; %angular velocity
-u = [u_v ; u_w]; %inputs
-u_n = [u_v ; u_w]; %noised inputs
+control_input.u = [u_v ; u_w]; %inputs
+control_input.u_noised = [u_v ; u_w]; %noised inputs
+control_input.Q = diag(q.^2);
 %%% UKF parameter
-alpha = 0.55; 
-kappa = 5;
-beta = 2; %influence the Weight of mean covariance
-alpha2 = 0.45; 
-kappa2 = 10;
-beta2 = 2; %influence the Weight of mean covariance
-sigma_param = struct('alpha', alpha,'kappa',kappa,'beta',beta);
-sigma_param2 = struct('alpha', alpha2,'kappa',kappa2,'beta',beta2);
+sigma_param = struct;
+sigma_param.alpha = 0.55; 
+sigma_param.kappa = 5;
+sigma_param.beta = 2; %influence the Weight of mean covariance
+sigma_param2 = struct;
+sigma_param2.alpha = 0.45; 
+sigma_param2.kappa = 10;
+sigma_param2.beta = 2; %influence the Weight of mean covariance
 
-
+%%%testing states 
+X_Landmark = zeros(2*map.landmark_number,1); %landmarks states init, L_x and L_y
+state_number = 3+2*map.landmark_number;
+testing1 = struct;
+testing2 = struct;
+testing1.states = zeros(state_number,1);
+testing2.states = zeros(state_number,1);
+testing1.P = zeros(state_number,state_number);
+testing2.P = zeros(state_number,state_number);
 %%%%%%%%%%%PLOT SETUP
-landmark_error_ekf = zeros(2,iteration);
-landmark_error_eukf = zeros(2,iteration);
-robot_error_ekf = zeros(3,iteration);
-robot_error_eukf= zeros(3,iteration);
+errors = struct; 
 
-landmark_error_ekf_cumulate = zeros(2,iteration);
-landmark_error_eukf_cumulate = zeros(2,iteration);
-robot_error_ekf_cumulate = zeros(3,iteration);
-robot_error_eukf_cumulate= zeros(3,iteration);
+%error for each iteration
+errors.landmark_error_testing1 = zeros(2,iteration); 
+errors.landmark_error_testing2 = zeros(2,iteration);
+errors.robot_error_testing1 = zeros(3,iteration);
+errors.robot_error_testing2= zeros(3,iteration);
+%sum of error for each iteration
+errors.landmark_error_cumulate_testing1 = zeros(2,iteration);
+errors.landmark_error_cumulate_testing2 = zeros(2,iteration);
+errors.robot_error_cumulate_testing1 = zeros(3,iteration);
+errors.robot_error_cumulate_testing2= zeros(3,iteration);
 
-
-
+%loop i is for calculating average error
 for loop_i = 1:loop
 loop_i
 %%%ROBOT INIT
-X_Robot = zeros(3,1); %robot states init, (x,y,theta)
+X_Robot = [0 0 0]'; %robot states init, (x,y,theta)
 % X_Robot = [-2;-2;0]
-X_Landmark = zeros(2*landmark_number,1); %landmarks states init, L_x and L_y
+
 %%%THE MAP INIT
-X1 = [X_Robot ; X_Landmark]; %the map states init
-X2 = X1;
+testing1.states = [X_Robot ; X_Landmark]; %the map states init
+testing2.states = [X_Robot ; X_Landmark];
 %robot states index
 r = 1:3;
-state_number = 3+2*landmark_number;
-P1 = zeros(state_number,state_number);
-P1(r,r) = 0.1*diag([1 1 1]);
-P2 = 1*diag([1 1 1]);
 
+testing1.P = zeros(state_number,state_number);
+testing1.P(r,r) = 0.1*diag([1 1 1]);
+% testing2.P = 1*diag([1 1 1]);
+testing2.P = zeros(state_number,state_number);
+testing2.P(r,r) = 0.1*diag([1 1 1]);
 %observed landmarks index
-landmark_obsved = [];
-Y = zeros(2,landmark_number); %landmark observation
-Y_v = zeros(2*landmark_number,1);
+observations.landmark_obsved = [];
+observations.Y = zeros(2,map.landmark_number); %landmark observation
 
 % first_obs = true;
-%%%expected trajectory
-X_expect = X_Robot;
+plots = struct;
 Tri_shape0 = [0.4 0.1 0.1 0.4;
              0 pi*2/3 -pi*2/3 0]; %polar value [r phi] for triangle shape
-Tri_shape_expect = polar2cart(X_expect,Tri_shape0);
+plots.Tri_shape_expect = polar2cart(X_Robot,Tri_shape0);
 
 %%%robot plts
-robot_expect_plot =  plt_init(Tri_shape_expect,'r','-','none');
-robot_plot_EKF =  plt_init(Tri_shape_expect,'b','-','none');
-robot_plot_EUKF =  plt_init(Tri_shape_expect,'k','-','none');
+plots.robot_expect_plot =  plt_init(plots.Tri_shape_expect,'r','-','none');
+plots.robot_plot_EKF =  plt_init(plots.Tri_shape_expect,'b','-','none');
+plots.robot_plot_EUKF =  plt_init(plots.Tri_shape_expect,'k','-','none');
 %%%landmark plts
-landmark_plot_real = plt_init(L,'r','none','+');
-landmark_plot_EKF = plt_init(L,'b','none','+');
-landmark_plot_EUKF = plt_init(L,'k','none','+');
-landmark_filter_free = plt_init(L,'g','none','+');
+plots.landmark_plot_real = plt_init(map.Landmark_location,'r','none','+');
+plots.landmark_plot_testing1 = plt_init(map.Landmark_location,'b','none','+');
+plots.landmark_plot_testing2 = plt_init(map.Landmark_location,'k','none','+');
+plots.landmark_filter_free = plt_init(map.Landmark_location,'g','none','+');
 %observe sequence generate
-obsv_sequence = randperm(landmark_number,landmark_number);
-states_obsved = [1 2 3];    
+obsv_sequence = randperm(map.landmark_number,map.landmark_number);
+observations.states_obsved = [1 2 3];    
 
 for j = 1:iteration
     lm_left = find(obsv_sequence);
@@ -116,93 +132,89 @@ for j = 1:iteration
         lm_number = obsv_sequence(lm_left(1));
         obsv_sequence(lm_left(1)) = 0;
         %increase states
-        L_index = 3+2*(lm_number-1)+1:3+2*(lm_number-1)+2;
+        observations.L_index = 3+2*(lm_number-1)+1:3+2*(lm_number-1)+2;
         %robot states indices and observed landmark indeics
-        states_obsved = [states_obsved, L_index];
+        observations.states_obsved = [observations.states_obsved, observations.L_index];
         %observed landmark indices
-        landmark_obsved = [landmark_obsved,lm_number];
-        %observe the current landmark range and angle [r phi]
-        L_obsv= landmarks_obsv(X_expect,L(:,lm_number))+ v.*randn(2,1);
+        observations.landmark_obsved = [observations.landmark_obsved,lm_number];
+        %observe the current landmark range and angle [r phi] 
+        L_obsv= landmarks_obsv(odometry.true_pose(r,j),map.Landmark_location(:,lm_number))+ v.*randn(2,1);
         
         %%%EKF add new landmark
-%           [X1, P1] = UKF_newLM(X_expect,X1,P1,V,L_obsv,states_obsved,L_index,sigma_param);
-         [X1, P1] = EKF_newLM(X_expect,X1,P1,V,L_obsv,states_obsved,L_index);
-         [X2, P2] = UKF_newLM(X_expect,X2,P2,V,L_obsv,states_obsved,L_index,sigma_param);
-%          [X2, P2] = EKF_newLM(X_expect,X2,P2,V,L_obsv,states_obsved,L_index);
+%           [testing1.states, testing1.P] = UKF_newLM(odometry.true_pose(r,j),testing1,observations,L_obsv,sigma_param);
+         [testing1.states, testing1.P] = EKF_newLM(odometry.true_pose(r,j),testing1,observations,L_obsv);
+         [testing2.states, testing2.P] = UKF_newLM(odometry.true_pose(r,j),testing2,observations,L_obsv,sigma_param);
+%          [testing2.states, testing2.P] = EKF_newLM(odometry.true_pose(r,j),testing2,observations,L_obsv);;
     end
-    %expect trajectory, for plot
-    X_expect = robot_motion(X_expect,u,dt); 
-    X_expect(3) = wrapToPi(X_expect(3));
 
     %control input noise
     p_noise = q.*randn(2,1);
-    u_n(1)=u_v+p_noise(1);
-    u_n(2)=u_w+p_noise(2); 
+    control_input.u_noised(1)=u_v+p_noise(1);
+    control_input.u_noised(2)=u_w+p_noise(2); 
     
-    %unfiltered pose
+    %true pose
     if(j >1)
-        odometry.unfiltered_pose(j,r) = robot_motion((odometry.unfiltered_pose(j-1,r))',u_n,dt);
-        odometry.unfiltered_pose(j,3) = wrapToPi(odometry.unfiltered_pose(j,3));
+        odometry.true_pose(r,j) = robot_motion(odometry.true_pose(r,j-1),control_input.u_noised,dt);
+        odometry.true_pose(3,j) = wrapToPi(odometry.true_pose(3,j));
     end
     %landmark measurment noise added
-    for i = landmark_obsved
-        M = landmarks_obsv(X_expect,L(:,i))+ v.*randn(2,1);
+    for i = observations.landmark_obsved
+        M = landmarks_obsv(odometry.true_pose(r,j),map.Landmark_location(:,i))+ v.*randn(2,1);
         if M(1) <0
             M(1) = 0;
         end
-        Y(:,i) = M;
-        Y_v(2*(i-1)+1:2*(i-1)+2) = M;
+        observations.Y(:,i) = M;
     end
     
     %%%%%%%%EKF Prediction
-      [X1,P1] = EKF_prediction(X1,P1,u_n,dt,states_obsved);
-%         [X1,P1] = UKF_prediction_original(X1,P1,u_n,Q,dt,sigma_param,states_obsved,0);
-%          [X1,P1] = UKF_prediction(X1,P1,u_n,Q,dt,sigma_param,states_obsved,0);
-         [X2,P2] = UKF_prediction(X2,P2,u_n,Q,dt,sigma_param,states_obsved,0);
-%         [X2,P2] = EKF_prediction(X2,P2,u_n,dt,states_obsved);
+      [testing1.states,testing1.P] = EKF_prediction(testing1,observations,control_input.u,dt);
+        [testing2.states,testing2.P] = UKF_prediction_original(testing2,observations,control_input,dt,sigma_param,0);
+%          [testing1.states,testing1.P] = UKF_prediction(testing1,observations,control_input,dt,sigma_param,0);
+%          [testing2.states,testing2.P] = UKF_prediction(testing2,observations,control_input,dt,sigma_param,0);
+%         [testing2.states,testing2.P] = EKF_prediction(testing2,observations,control_input.u,dt);
         %%%%%%%%EKF update
-        [X1,P1,L_ekf] = EKF_update(X1,P1,Y,V,landmark_obsved,landmark_number);
-%           [X1,P1,L_ekf] = UKF_update2(X1,P1,Y_v,v,sigma_param,landmark_obsved,landmark_number,states_obsved);
-%               [X1,P1,L_ekf] = UKF_update(X1,P1,Y_v,v,sigma_param,landmark_obsved,landmark_number,states_obsved);
-%         [X2,P2,L_eukf] = EKF_update(X2,P2,Y,V,landmark_obsved,landmark_number);
-         [X2,P2,L_eukf] = UKF_update2(X2,P2,Y_v,v,sigma_param,landmark_obsved,landmark_number,states_obsved);
+        [testing1.states,testing1.P,testing1.L_estimate_location] = EKF_update(testing1,observations,map.landmark_number);
+%           [testing1.states,testing1.P,testing1.L_estimate_location] = UKF_update(testing1,observations,map.landmark_number,sigma_param);
+%          [testing2.states,testing2.P,testing2.L_estimate_location] = UKF_update_testing(testing2,observations,map.landmark_number,sigma_param);
+%         [testing2.states,testing2.P,testing2.L_estimate_location] = EKF_update(testing2,observations,map.landmark_number);
+          [testing2.states,testing2.P,testing2.L_estimate_location] = UKF_update(testing2,observations,map.landmark_number,sigma_param);
 
     %%%states update
-    states_ekf(j,r) = X1(r);
-    states_ukf(j,r) = X2(r);
-    states_expect(j,r) = X_expect;
-    for i = landmark_obsved
-        L_filter_free(:,i) = inverse_landmark_obsv((odometry.unfiltered_pose(j,r))', Y(:,i));
+    robot_full_states.states_testing1(j,r) = testing1.states(r);
+    robot_full_states.states_testing2(j,r) = testing2.states(r);
+    robot_full_states.states_true_pose(j,r) = odometry.true_pose(r,j);
+    for i = observations.landmark_obsved
+        L_filter_free(:,i) = inverse_landmark_obsv(odometry.true_pose(r,j), observations.Y(:,i));
     end
     %%%robot plot update
-    robot_plot_update(X_expect,Tri_shape0,robot_expect_plot)
-    robot_plot_update(X1(r),Tri_shape0,robot_plot_EKF)
-    robot_plot_update(X2(r),Tri_shape0,robot_plot_EUKF)
+    robot_plot_update(odometry.true_pose(r,j),Tri_shape0,plots.robot_expect_plot)
+    robot_plot_update(testing1.states(r),Tri_shape0,plots.robot_plot_EKF)
+    robot_plot_update(testing2.states(r),Tri_shape0,plots.robot_plot_EUKF)
     %%%landmarks plot update
-%     landmark_plot_update(L,landmark_plot_real)
-    landmark_plot_update(L_ekf,landmark_plot_EKF)
-    landmark_plot_update(L_eukf,landmark_plot_EUKF)
-    landmark_plot_update(L_filter_free,landmark_filter_free)
+%     landmark_plot_update(L,plots.landmark_plot_real)
+    landmark_plot_update(testing1.L_estimate_location,plots.landmark_plot_testing1)
+    landmark_plot_update(testing2.L_estimate_location,plots.landmark_plot_testing2)
+    landmark_plot_update(L_filter_free,plots.landmark_filter_free)
     
     %%%robot location mean square error
-    robot_error_ekf(:,j) = robot_mse(X1(r),X_expect);
-    robot_error_eukf(:,j) = robot_mse(X2(r),X_expect);
+    errors.robot_error_testing1(:,j) = robot_mse(testing1.states(r),odometry.true_pose(r,j));
+    errors.robot_error_testing2(:,j) = robot_mse(testing2.states(r),odometry.true_pose(r,j));
     %%%landmark location mean square error
-    landmark_error_ekf(:,j) = landmark_sum_mse(L(:,landmark_obsved),L_ekf(:,landmark_obsved));
-    landmark_error_eukf(:,j) = landmark_sum_mse(L(:,landmark_obsved),L_eukf(:,landmark_obsved));
+    errors.landmark_error_testing1(:,j) = landmark_sum_mse(map.Landmark_location(:,observations.landmark_obsved),testing1.L_estimate_location(:,observations.landmark_obsved));
+    errors.landmark_error_testing2(:,j) = landmark_sum_mse(map.Landmark_location(:,observations.landmark_obsved),testing2.L_estimate_location(:,observations.landmark_obsved));
     drawnow
 end
 
 % figure()
 % subplot(2,1,1)
-% plot(landmark_error_ekf(1,:),'color','b'); hold on;
-% plot(landmark_error_eukf(1,:),'color','k'); hold off;
+% plot(errors.landmark_error_testing1(1,:),'color','b'); hold on;
+% plot(errors.landmark_error_testing2(1,:),'color','k'); hold off;
 % title('landmark error for x direction')
 % xlabel('iteration')
 % ylabel('sum error square')
 % subplot(2,1,2)
-% plot(landmark_error_ekf(2,:),'color','b');  hold on;
-% plot(landmark_error_eukf(2,:),'color','k');  hold off;
+% plot(errors.landmark_error_testing1(2,:),'color','b');  hold on;
+% plot(errors.landmark_error_testing2(2,:),'color','k');  hold off;
 % title('landmark error for y direction')
 % xlabel('iteration')
 % ylabel('sum error square')
@@ -210,36 +222,36 @@ end
 % 
 % figure()
 % subplot(3,1,1)
-% plot(robot_error_ekf(1,:),'color','b');  hold on;
-% plot(robot_error_eukf(1,:),'color','k');  hold off;
+% plot(robot_error_testing1(1,:),'color','b');  hold on;
+% plot(errors.robot_error_testing2(1,:),'color','k');  hold off;
 % title('robot error x')
 % subplot(3,1,2)
-% plot(robot_error_ekf(2,:),'color','b');  hold on;
-% plot(robot_error_eukf(2,:),'color','k');  hold off;
+% plot(robot_error_testing1(2,:),'color','b');  hold on;
+% plot(errors.robot_error_testing2(2,:),'color','k');  hold off;
 % subplot(3,1,3)
-% plot(abs(robot_error_ekf(3,:)),'color','b');  hold on;
-% plot(abs(robot_error_eukf(3,:)),'color','k');  hold off;
+% plot(abs(robot_error_testing1(3,:)),'color','b');  hold on;
+% plot(abs(errors.robot_error_testing2(3,:)),'color','k');  hold off;
 
-landmark_error_ekf_cumulate = landmark_error_ekf_cumulate +landmark_error_ekf;
-landmark_error_eukf_cumulate = landmark_error_eukf_cumulate +landmark_error_eukf;
-robot_error_ekf_cumulate = robot_error_ekf_cumulate + robot_error_ekf;
-robot_error_eukf_cumulate = robot_error_eukf_cumulate + robot_error_eukf;
+errors.landmark_error_cumulate_testing1 = errors.landmark_error_cumulate_testing1 +errors.landmark_error_testing1;
+errors.landmark_error_cumulate_testing2 = errors.landmark_error_cumulate_testing2 +errors.landmark_error_testing2;
+errors.robot_error_cumulate_testing1 = errors.robot_error_cumulate_testing1 + errors.robot_error_testing1;
+errors.robot_error_cumulate_testing2 = errors.robot_error_cumulate_testing2 + errors.robot_error_testing2;
 end
-landmark_error_ekf_cumulate = landmark_error_ekf_cumulate/loop;
-landmark_error_eukf_cumulate = landmark_error_eukf_cumulate/loop;
-robot_error_ekf_cumulate = robot_error_ekf_cumulate/loop;
-robot_error_eukf_cumulate = robot_error_eukf_cumulate/loop;
+errors.landmark_error_cumulate_testing1 = errors.landmark_error_cumulate_testing1/loop;
+errors.landmark_error_cumulate_testing2 = errors.landmark_error_cumulate_testing2/loop;
+errors.robot_error_cumulate_testing1 = errors.robot_error_cumulate_testing1/loop;
+errors.robot_error_cumulate_testing2 = errors.robot_error_cumulate_testing2/loop;
 
 figure()
 subplot(2,1,1)
-plot(landmark_error_ekf_cumulate(1,:),'color','b'); hold on;
-plot(landmark_error_eukf_cumulate(1,:),'color','k'); hold off;
+plot(errors.landmark_error_cumulate_testing1(1,:),'color','b'); hold on;
+plot(errors.landmark_error_cumulate_testing2(1,:),'color','k'); hold off;
 title('landmark error for x direction')
 xlabel('iteration')
 ylabel('sum error square')
 subplot(2,1,2)
-plot(landmark_error_ekf_cumulate(2,:),'color','b');  hold on;
-plot(landmark_error_eukf_cumulate(2,:),'color','k');  hold off;
+plot(errors.landmark_error_cumulate_testing1(2,:),'color','b');  hold on;
+plot(errors.landmark_error_cumulate_testing2(2,:),'color','k');  hold off;
 title('landmark error for y direction')
 xlabel('iteration')
 ylabel('sum error square')
@@ -247,22 +259,22 @@ ylabel('sum error square')
 
 figure()
 subplot(3,1,1)
-plot(robot_error_ekf_cumulate(1,:),'color','b');  hold on;
-plot(robot_error_eukf_cumulate(1,:),'color','k');  hold off;
+plot(errors.robot_error_cumulate_testing1(1,:),'color','b');  hold on;
+plot(errors.robot_error_cumulate_testing2(1,:),'color','k');  hold off;
 title('robot error x')
 subplot(3,1,2)
-plot(robot_error_ekf_cumulate(2,:),'color','b');  hold on;
-plot(robot_error_eukf_cumulate(2,:),'color','k');  hold off;
+plot(errors.robot_error_cumulate_testing1(2,:),'color','b');  hold on;
+plot(errors.robot_error_cumulate_testing2(2,:),'color','k');  hold off;
 title('robot error y')
 subplot(3,1,3)
-plot(abs(robot_error_ekf_cumulate(3,:)),'color','b');  hold on;
-plot(abs(robot_error_eukf_cumulate(3,:)),'color','k');  hold off;
+plot(abs(errors.robot_error_cumulate_testing1(3,:)),'color','b');  hold on;
+plot(abs(errors.robot_error_cumulate_testing2(3,:)),'color','k');  hold off;
 title('robot error theta')
 
 %trajectory plot
 figure()
-plot(states_ekf(:,1),states_ekf(:,2),'b'); hold on;
-plot(states_ukf(:,1),states_ukf(:,2),'k'); hold on;
-plot(odometry.unfiltered_pose(:,1),odometry.unfiltered_pose(:,2),'g'); hold on;
-plot(states_expect(:,1),states_expect(:,2),'r'); hold off;
+plot(robot_full_states.states_testing1(:,1),robot_full_states.states_testing1(:,2),'b'); hold on;
+plot(robot_full_states.states_testing2(:,1),robot_full_states.states_testing2(:,2),'k'); hold on;
+plot(odometry.true_pose(:,1),odometry.true_pose(:,2),'g'); hold on;
+plot(robot_full_states.states_true_pose(:,1),robot_full_states.states_true_pose(:,2),'r'); hold off;
 

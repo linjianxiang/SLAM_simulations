@@ -1,4 +1,8 @@
-function [X,P] = UKF_prediction_original(X,P,u,Q,dt,sigma_param,states_obsved,RL_cov)
+function [X,P] = UKF_prediction_original(testing,observation,control_input,dt,sigma_param,RL_cov)
+X = testing.states;
+P = testing.P;
+states_obsved = observation.states_obsved;
+u = control_input.u;
 %%%X_r: robot states
 %%%P: state error covariance matrix
 %%%u: system input

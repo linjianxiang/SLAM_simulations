@@ -1,4 +1,9 @@
-function [X,P,L_estimate] = EKF_update(X,P,Y,V,landmark_obsved,landmark_number)
+function [X,P,L_estimate] = EKF_update(testing,observation,landmark_number)
+X = testing.states;
+P = testing.P;
+Y = observation.Y;
+V = observation.V;
+landmark_obsved = observation.landmark_obsved;
 
 L_estimate = zeros(2,landmark_number);
 r = 1:3;
@@ -24,7 +29,8 @@ for i = landmark_obsved
     F_x(r,r) = eye(3);
     F_x(4:5,L_index) = eye(2);
     C = C_shrink*F_x;
-    K = P*C'*inv(C*P*C'+V); %feedback calucaltion
+%     K = P*C'*inv(C*P*C'+V); %feedback calucaltion
+    K = (P*C')/(C*P*C'+V); %feedback calucaltion
     E_y = Y_i-h; %output error
     E_y(2) = wrapToPi(E_y(2));
     X = X + K*E_y;  % state estimation

@@ -1,6 +1,6 @@
 %try to implement UKF to handle process noise 
 
-clc;clear;%close all
+clc;clear;close all
 
 %SLAM-EKF testing bench
 iteration = 600;
@@ -11,32 +11,34 @@ dt = 0.1;
 X_Robot = zeros(3,1); %robot states init, (x,y,theta)
 P_xx = zeros(3,3); %robot states error covariance matrix 
 %%%LANDMARKS INIT
-landmark_number = 10; %number of landmarks
-map_length = 10; %map size
+map = struct;
+map.landmark_number = 10;  %number of landmarks
+map.map_length = 10; %map size
+map.random_landmark = true;
 figure(1); % create figure
 cla % clear axes
-axis([-map_length map_length -map_length map_length]) % set axes limits
+axis([-map.map_length map.map_length -map.map_length map.map_length]) % set axes limits
 axis square
-X_Landmark = zeros(2*landmark_number,1); %landmarks states init, L_x and L_y
+X_Landmark = zeros(2*map.landmark_number,1); %landmarks states init, L_x and L_y
 %%%THE MAP INIT
 X = [X_Robot ; X_Landmark]; %the map states init
 %robot states index
 r = 1:3;
 %P_LL = diag(inf(2*landmark_number,1)); %landmarks states error covariance matrix
-P_LL = 10000*diag(ones(2*landmark_number,1)); %landmarks states error covariance matrix;
-P = zeros(3+2*landmark_number,3+2*landmark_number); 
-P(r,r)= P_xx; P(4:3+2*landmark_number,4:3+2*landmark_number)=P_LL;%the map error covariance
+P_LL = 10000*diag(ones(2*map.landmark_number,1)); %landmarks states error covariance matrix;
+P = zeros(3+2*map.landmark_number,3+2*map.landmark_number); 
+P(r,r)= P_xx; P(4:3+2*map.landmark_number,4:3+2*map.landmark_number)=P_LL;%the map error covariance
 % P_xL = randn(3,2*landmark_number);P(r,landmark_index)=P_xL;P(landmark_index,r)=P_xL'; 
 P_init = P;
 
 %%%LANDMARKS GENERATION
 random_landmark = true;%true; %true for random_landmark, false for fixed landmark
-L = landmarks_generate(map_length,landmark_number,random_landmark); %landmark location are generated,size of(2,landmark_number)
-L_estimate = zeros(2,landmark_number);
-L_EKF_free = zeros(2,landmark_number);
+L = landmarks_generate(map); %landmark location are generated,size of(2,landmark_number)
+L_estimate = zeros(2,map.landmark_number);
+L_EKF_free = zeros(2,map.landmark_number);
 %observed landmarks index
 landmark_obsved = [];
-Y = zeros(2,landmark_number); %landmark observation
+Y = zeros(2,map.landmark_number); %landmark observation
 %%%noise covariance
 Q1 = zeros(3,3);
 q = 2*[.01;pi/1000]; % control noise
@@ -106,7 +108,7 @@ landmark_ekf_free_plot = line(...
 
 %%%%%%%%%%%%EKF-SLAM
 %observe sequence generate
-obsv_sequence = randperm(landmark_number,landmark_number);
+obsv_sequence = randperm(map.landmark_number,map.landmark_number);
 states_obseved = [1 2 3];
 %sigma parameters
 alpha = 0.55; 
@@ -187,7 +189,7 @@ for j = 1:iteration
         L_index = 3+(i-1)*2+1:3+(i-1)*2+2;
         Y_i = Y(:,i);  %i_th landmark obsv
         [h,C_shrink] = landmark_estimate(X(r),X(L_index)); %landmark estimation and its jacobian
-        F_x = zeros(5,3+2*landmark_number); % transformation matrix, for less calculation
+        F_x = zeros(5,3+2*map.landmark_number); % transformation matrix, for less calculation
         F_x(r,r) = eye(3);
         F_x(4:5,L_index) = eye(2);
         C = C_shrink*F_x;
@@ -196,7 +198,7 @@ for j = 1:iteration
         E_y(2) = wrapToPi(E_y(2));
         X = X + K*E_y;  % state estimation
         X(3) = wrapToPi(X(3));
-        P = (eye(3+2*landmark_number)-K*C)*P; %P update
+        P = (eye(3+2*map.landmark_number)-K*C)*P; %P update
         L_estimate(:,i) = X(L_index);
         L_EKF_free(:,i) = inverse_landmark_obsv(X(r), Y_i);
     end

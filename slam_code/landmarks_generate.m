@@ -1,4 +1,8 @@
-function L = landmarks_generate(l,n,random_landmark)
+%function L = landmarks_generate(l,n,random_landmark)
+function L = landmarks_generate(map)
+l = map.map_length;
+n = map.landmark_number;
+random_landmark = map.random_landmark;
 % l : size of the map will be l x l
 % n : number of lanmarks, landmarks will be randomly generated within the map
 % L : landmarks location 
