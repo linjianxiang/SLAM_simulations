@@ -1,10 +1,10 @@
 function dx = LS_optimization(constraints,odom)
 
-
+len = size(odom,2);
 needToAddPrior = true;
-H = zeros(3*size(constraints.pose_pose_edges,1), 3*size(constraints.pose_pose_edges,1));
-b = zeros(3*size(constraints.pose_pose_edges,1), 1);
-for i = 1:(size(constraints.pose_pose_edges,1)-1)
+H = zeros(3*len, 3*len);
+b = zeros(3*len, 1);
+for i = 1:(size(constraints.pose_pose_edges,1))
    
     %constrains two side index
     index = constraints.pose_pose_edges(i,:);
