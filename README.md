@@ -1,4 +1,4 @@
-# SLAM_simulations
+# MATLAB SLAM simulations --EKF,UKF,GRAPH SLAM
 Simulates 2D EKF,UKF,and graph-based SLAM.
 
 The folder "slam_code" and "slam_code_2wheel_model" uses different motion model for simulation
