@@ -14,5 +14,10 @@ After that,
 Graph-based optimization run on the result from EKF and UKF SLAM. 
 For the Graph SLAM, constrains are added between every step and loop-closure constrains are randomly generated
 
-
 run kf\_tb.m to start the program
+
+
+https://user-images.githubusercontent.com/11896059/138176663-2f87dc2d-3b1b-4c04-9a54-980f48518c83.mp4
+
+
+
